@@ -52,13 +52,16 @@ int main(int argc, char * argv[]) {
 int parse_opt(int argc, char * argv[]) {
 
     int res = 0, is_root = 0;
-    char * endptr = NULL, *uname = NULL, *ugrp = NULL;
+    char * endptr = NULL, *uname = NULL, *ugrp = NULL, *root_dir = NULL;
     int port = 0;
     struct passwd * pwd;
     struct group * grp;
 
+    is_root = (getuid() == 0);
+    rain_srv.is_root = is_root;
+
     opterr = 0;
-    while((res = getopt(argc, argv, "a:p:u:g:n:l:f:d")) != -1) {
+    while((res = getopt(argc, argv, "a:p:u:g:n:l:f:c:d")) != -1) {
         switch (res) {
             case 'a' :
                 rain_srv.addr = strdup((char *) optarg);
@@ -83,6 +86,7 @@ int parse_opt(int argc, char * argv[]) {
             case 'g' : ugrp = (char *) optarg; break;
             case 'd' : rain_srv.is_debug = 1; break;
             case 'f' : rain_srv.app = strdup((char *) optarg); break;
+            case 'c' : if (is_root) {root_dir= optarg;} break;
             case '?' :
             case 'h' :
             default :
@@ -98,8 +102,13 @@ int parse_opt(int argc, char * argv[]) {
         }
     }
 
-    is_root = (getuid() == 0);
-    rain_srv.is_root = is_root;
+    if (root_dir) {
+        if (-1 == chroot(root_dir)) {
+            logger(WARNING, "change root %s error!", root_dir);
+            return RAIN_ERROR;
+        }
+
+    }
 
     if (is_root && (uname || ugrp)) {
 
@@ -137,6 +146,10 @@ int rain_help() {
             "-a <address> bind to address\n" \
             "-p bind to tcp port\n" \
             "-f filename of application\n" \
+            "-l filename of rain log\n" \
+            "-s <path> bind to Unix domain socket\n" \
+            "-u <user> Set the user ID of the child process\n" \
+            "-g <group> Set the group ID of the child process\n" \
             "-n child process number\n" \
             "-? or -h show this help\n" \
             );
@@ -242,6 +255,7 @@ void srv_stop() {
 
     act.sa_flags = SA_NODEFER;
     act.sa_handler = SIG_IGN;
+    sigemptyset(&act.sa_mask);
     // ignore child exit
     sigaction(SIGCHLD, &act, NULL);
 
@@ -324,6 +338,7 @@ void monitor() {
 
     act.sa_flags = SA_RESETHAND|SA_NODEFER;
     act.sa_handler = sign_fpm;
+    sigemptyset(&act.sa_mask);
     sigaction(SIGCHLD, &act, NULL);
     sigaction(SIGTERM, &act, NULL);
 }
